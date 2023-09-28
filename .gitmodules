@@ -1,0 +1,6 @@
+[submodule "RE-UE4SS"]
+	path = RE-UE4SS
+	url = git@github.com:UE4SS-RE/RE-UE4SS.git
+[submodule "DiscordMod/discord-rpc"]
+	path = DiscordMod/discord-rpc
+	url = git@github.com:discord/discord-rpc.git

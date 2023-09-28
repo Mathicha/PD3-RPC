@@ -1,0 +1,6 @@
+buildType:
+  default: shipping
+  choices:
+    shipping:
+      short: Shipping
+      buildType: Game_Shipping_Win64
