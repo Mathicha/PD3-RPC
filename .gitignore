@@ -34,3 +34,6 @@
 build/
 Output/
 CXXHeaderDump/
+
+.xmake/
+Intermediates/
