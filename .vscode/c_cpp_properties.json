@@ -1,0 +1,11 @@
+{
+  "configurations": [
+    {
+      "name": "Win32",
+      "includePath": ["${workspaceFolder}/**"],
+      "defines": ["UBT_COMPILED_PLATFORM=Windows"],
+      "cppStandard": "c++23"
+    }
+  ],
+  "version": 4
+}
