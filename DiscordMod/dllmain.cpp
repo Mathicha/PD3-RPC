@@ -17,16 +17,6 @@ struct FSBZPartyMember
     /* ... */
 };
 
-enum ESBZOnlineJoinType : uint8_t
-{
-    Debug = 0,
-    Public = 1,
-    Private = 2,
-    FriendsOnly = 3,
-    InviteOnly = 4,
-    Default = 1,
-};
-
 enum Status : uint8_t
 {
     GameStarting,
@@ -36,9 +26,16 @@ enum Status : uint8_t
     InHeist
 };
 
-std::wstring constchartowstring(const char *src)
+std::wstring CharToWString(const char *src)
 {
     return std::wstring(src, src + strlen(src));
+}
+
+const char *WCharToChar(const wchar_t *src)
+{
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter; // that shit is deprecated but who care (not me)
+    std::string narrowStr = converter.to_bytes(src);
+    return narrowStr.c_str();
 }
 
 class DiscordMod : public RC::CppUserModBase
@@ -48,6 +45,8 @@ public:
     std::optional<StringType> heist_name = std::nullopt;
     std::optional<StringType> difficulty_name = std::nullopt;
     std::optional<int> party_size = 1;
+    std::optional<const wchar_t *> partyId = std::nullopt;
+    std::optional<const wchar_t *> joinSecret = std::nullopt;
     time_t startTimestamp = std::time(0);
 
     DiscordMod() : CppUserModBase()
@@ -60,16 +59,19 @@ public:
         DiscordEventHandlers handlers;
         memset(&handlers, 0, sizeof(handlers));
         handlers.ready = [](const DiscordUser *request)
-        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Ready\n")); };
+        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Ready ({}#{} - {})\n"), CharToWString(request->username), CharToWString(request->discriminator), CharToWString(request->userId)); };
         handlers.disconnected = [](int errorCode, const char *message)
-        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Disconnected (errcode={})\n"), errorCode); };
+        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Disconnected (code={}, message={})\n"), errorCode, CharToWString(message)); };
         handlers.errored = [](int errorCode, const char *message)
-        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Error (errcode={})\n"), errorCode); };
+        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Error (code={}, message={})\n"), errorCode, CharToWString(message)); };
         handlers.joinGame = [](const char *joinSecret)
-        { Output::send<LogLevel::Verbose>(STR("[Discord:Event] Join game {}\n"), constchartowstring(joinSecret)); };
+        {
+            Output::send<LogLevel::Verbose>(STR("[Discord:Event] Join game (secret={})\n"), CharToWString(joinSecret));
+            // ASBZBeaconActionPhaseClient->ClientJoinPartyByCode(PartyCode) ?
+        };
         handlers.joinRequest = [](const DiscordUser *request)
         {
-            Output::send<LogLevel::Verbose>(STR("[Discord:Event] Join request from {}#{} - {}\n"), constchartowstring(request->username), constchartowstring(request->discriminator), constchartowstring(request->userId));
+            Output::send<LogLevel::Verbose>(STR("[Discord:Event] Join request ({}#{} - {})\n"), CharToWString(request->username), CharToWString(request->discriminator), CharToWString(request->userId));
             Discord_Respond(request->userId, DISCORD_REPLY_IGNORE);
         };
         Discord_Initialize(DISCORD_APPLICATION_ID, &handlers, 1, PAYDAY_3_STEAM_APPID);
@@ -102,11 +104,7 @@ public:
             if (heist_name.has_value() && difficulty_name.has_value())
             {
                 auto formated = std::format(STR("{} | {}"), heist_name.value(), difficulty_name.value());
-                auto input = formated.c_str();
-                auto size = (wcslen(input) + 1) * sizeof(wchar_t);
-                auto buffer = new char[size];
-                std::wcstombs(buffer, input, size);
-                discordPresence.details = buffer;
+                discordPresence.details = WCharToChar(formated.c_str());
             }
             break;
         }
@@ -121,8 +119,10 @@ public:
         discordPresence.partyMax = 4; // TODO: non hard coded party max
 
         discordPresence.partyPrivacy = DISCORD_PARTY_PUBLIC; // TODO: private if offline or (ESBZOnlineJoinType) Private FriendsOnly InviteOnly
-        discordPresence.joinSecret = "test";                 // TODO: get the partycode(?) or idk whats needed exactly to join payday lobby (max 128 bytes)
-        discordPresence.partyId = "party";                   // TODO: get something unique that identifies the party (but not the code) (max 128 bytes)
+        if (partyId.has_value())
+            discordPresence.partyId = WCharToChar(partyId.value());
+        if (joinSecret.has_value())
+            discordPresence.joinSecret = WCharToChar(joinSecret.value());
 
         Discord_UpdatePresence(&discordPresence);
 
@@ -173,10 +173,24 @@ public:
         else
             on_update_id = 0;
 
+        auto SBZPartyManager = UObjectGlobals::FindFirstOf(STR("SBZPartyManager"));
+        if (SBZPartyManager != nullptr)
+        {
+            auto PartyId = SBZPartyManager->GetValuePtrByPropertyNameInChain<FString>(STR("PartyId"));
+            if (PartyId != nullptr)
+                partyId = PartyId->GetCharArray();
+            else
+                partyId = std::nullopt;
+
+            auto PartyCode = SBZPartyManager->GetValuePtrByPropertyNameInChain<FString>(STR("PartyCode"));
+            if (PartyCode != nullptr)
+                joinSecret = PartyCode->GetCharArray();
+            else
+                joinSecret = std::nullopt;
+        }
+
         if (status == Status::InMenu)
         {
-            auto SBZPartyManager = UObjectGlobals::FindFirstOf(STR("SBZPartyManager"));
-
             if (SBZPartyManager != nullptr)
             {
                 auto PartyMembers = SBZPartyManager->GetValuePtrByPropertyNameInChain<Unreal::TArray<FSBZPartyMember>>(STR("PartyMembers"));
